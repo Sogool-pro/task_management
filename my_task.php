@@ -1,9 +1,12 @@
 <?php 
+if (function_exists('opcache_reset')) {
+    opcache_reset();
+}
 session_start();
 if (isset($_SESSION['role']) && isset($_SESSION['id'])) {
-    include "DB_connection.php";
-    include "app/Model/Task.php";
-    include "app/Model/User.php";
+    include_once "DB_connection.php";
+    include_once "app/model/Task.php";
+    include_once "app/model/User.php";
 
     $tasks = get_all_tasks_by_id($conn, $_SESSION['id']);
 
