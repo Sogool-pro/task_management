@@ -1,5 +1,8 @@
 <?php
 session_start();
+date_default_timezone_set('Asia/Manila');
+
+require 'DB_connection.php';
 
 if (!isset($_SESSION['id']) || $_SESSION['role'] !== 'employee') {
     http_response_code(403);
@@ -7,29 +10,68 @@ if (!isset($_SESSION['id']) || $_SESSION['role'] !== 'employee') {
     exit;
 }
 
-require 'DB_connection.php';
-
 $user_id = $_SESSION['id'];
+$today = date('Y-m-d');
+$now   = date('H:i:s');
 
-// Check if there is already an open attendance (no time_out yet)
-$sql = "SELECT id FROM attendance WHERE user_id = ? AND time_out IS NULL ORDER BY id DESC LIMIT 1";
+/* -------------------------
+   DETERMINE SESSION
+-------------------------- */
+$hour = (int) date('H');
+
+if ($hour >= 5 && $hour < 12) {
+    $session = 'morning';
+} elseif ($hour >= 12 && $hour < 18) {
+    $session = 'afternoon';
+} else {
+    $session = 'overtime';
+}
+
+/* -------------------------
+   GET TODAY ATTENDANCE
+-------------------------- */
+$sql = "SELECT * FROM attendance 
+        WHERE user_id = ? AND att_date = ?
+        ORDER BY id DESC LIMIT 1";
 $stmt = $conn->prepare($sql);
-$stmt->execute([$user_id]);
-$existing = $stmt->fetch(PDO::FETCH_ASSOC);
+$stmt->execute([$user_id, $today]);
+$att = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if ($existing) {
-    echo json_encode(['status' => 'error', 'message' => 'Already timed in']);
+/* -------------------------
+   IF SESSION ALREADY OPEN
+   → RETURN IT (NOT ERROR)
+-------------------------- */
+if ($att && $att["{$session}_in"] && !$att["{$session}_out"]) {
+    echo json_encode([
+        'status' => 'success',
+        'attendance_id' => $att['id'],
+        'session' => $session,
+        'time_in' => $att["{$session}_in"],
+        'message' => 'Session already active'
+    ]);
     exit;
 }
 
-// Create new time-in record
-$sql = "INSERT INTO attendance (user_id, time_in) VALUES (?, NOW())";
-$stmt = $conn->prepare($sql);
-$stmt->execute([$user_id]);
-$attendance_id = $conn->lastInsertId();
+/* -------------------------
+   CREATE OR UPDATE
+-------------------------- */
+if (!$att) {
+    $sql = "INSERT INTO attendance (user_id, att_date, {$session}_in)
+            VALUES (?, ?, ?)";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([$user_id, $today, $now]);
+    $attendance_id = $conn->lastInsertId();
+} else {
+    $sql = "UPDATE attendance SET {$session}_in = ?
+            WHERE id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute([$now, $att['id']]);
+    $attendance_id = $att['id'];
+}
 
 echo json_encode([
     'status' => 'success',
-    'attendance_id' => $attendance_id
+    'attendance_id' => $attendance_id,
+    'session' => $session,
+    'time_in' => $now
 ]);
-
